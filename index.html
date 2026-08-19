@@ -787,11 +787,16 @@ tbody tr:hover { background-color: #f8fafc; }
           <h1>Team Carbon Dashboard</h1>  
           <p>Pantau akumulasi performa departemen secara otomatis untuk fokus penghematan.</p>  
         </div>
-        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-            <select id="teamDeptFilter" onchange="loadTeamData()" style="padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 700; border: 1px solid #cbd5e1; background: white; color: var(--esg-dark); cursor:pointer;">
-            </select>
-            <button onclick="loadTeamData()" class="btn primary" style="width: auto;">🔄 Refresh <span id="td_user_count" style="background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; margin-left:8px; font-size: 11.5px;">0 user</span></button>
-        </div>
+       <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+    <select id="teamPeriodFilter" onchange="renderTeamDashboardView()" style="padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 700; border: 1px solid #cbd5e1; background: white; color: var(--esg-dark); cursor:pointer;">
+        <option value="all">♾️ Semua Waktu</option>
+        <option value="month">🗓️ Bulan Ini</option>
+        <option value="today">📅 Hari Ini</option>
+    </select>
+    <select id="teamDeptFilter" onchange="loadTeamData()" style="padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 700; border: 1px solid #cbd5e1; background: white; color: var(--esg-dark); cursor:pointer;">
+    </select>
+    <button onclick="loadTeamData()" class="btn primary" style="width: auto;">🔄 Refresh <span id="td_user_count" style="background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; margin-left:8px; font-size: 11.5px;">0 user</span></button>
+</div>
       </div>
 
       <div class="team-grid-top">
@@ -2306,7 +2311,22 @@ function renderTeamDashboardView() {
   let categoryBreakdown = { 'AC Bersama': 0, 'Motor': 0, 'Laptop': 0, 'Lampu Bersama': 0, 'Handphone': 0, 'Mobil': 0, 'TV Bersama': 0 };
   let userTotals = {};
 
-  teamDetailedRecords.forEach(rec => {
+  // 1. Ambil nilai filter periode
+  const periodFilter = $('teamPeriodFilter') ? $('teamPeriodFilter').value : 'all';
+  const today = todayISO();
+  const currentMonth = today.substring(0, 7);
+
+  // 2. Filter data teamDetailedRecords berdasarkan periode
+  let filteredRecords = teamDetailedRecords.filter(rec => {
+      const dateStr = rec.tanggalEmisi || rec.date;
+      if (!dateStr) return false;
+      if (periodFilter === 'today') return dateStr === today;
+      if (periodFilter === 'month') return dateStr.startsWith(currentMonth);
+      return true; // 'all'
+  });
+
+  // 3. Kalkulasi data yang sudah difilter
+  filteredRecords.forEach(rec => {
       const motor = num(rec.motor), mobil = num(rec.mobil), laptop = num(rec.laptop), hp = num(rec.handphone);
       const ac = num(rec.ac), lampu = num(rec.lampu), tv = num(rec.tv), pool = num(rec.pool);
       
@@ -2327,10 +2347,12 @@ function renderTeamDashboardView() {
       userTotals[rec.userId].days.add(rec.tanggalEmisi || rec.date);
   });
 
+  // Tampilkan Ringkasan Angka Utama
   $('td_total').textContent = fmt(totalEmission);
   $('td_indiv').textContent = fmt(totalIndividual);
   $('td_shared').textContent = fmt(totalShared);
 
+  // Tampilkan Breakdown Kategori
   const maxCategoryVal = Math.max(...Object.values(categoryBreakdown), 1);
   const breakdownHtml = Object.entries(categoryBreakdown).sort((a,b)=>b[1]-a[1]).map(([k,v]) => {
       return `<div style="display:flex; align-items:center; margin-bottom:10px; font-size:13px; font-weight:700;">
@@ -2341,11 +2363,12 @@ function renderTeamDashboardView() {
           <div style="width:70px; text-align:right; color:var(--text-muted);">${fmt(v)} kg</div>
       </div>`;
   }).join('');
-  $('td_category_list').innerHTML = breakdownHtml || '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">Belum ada klasifikasi memadai.</div>';
+  $('td_category_list').innerHTML = breakdownHtml || '<div style="color:var(--text-muted); font-size:13px; text-align:center; padding:16px;">Belum ada klasifikasi memadai pada periode ini.</div>';
 
+  // 4. Proses Ranking (Berdasarkan TOTAL EMISI, bukan rata-rata lagi)
   let sortedUsers = Object.values(userTotals);
-  sortedUsers.forEach(u => u.avg = u.total / Math.max(1, u.days.size));
-  sortedUsers.sort((a,b)=> a.avg - b.avg);
+  // Mengurutkan dari total emisi terendah ke tertinggi (terhemat di awal)
+  sortedUsers.sort((a,b)=> a.total - b.total);
 
   const defaultAvatarSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2394a3b8' d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
@@ -2353,16 +2376,18 @@ function renderTeamDashboardView() {
       const photoSrc = (u.photo && u.photo.startsWith('data:image')) ? u.photo : defaultAvatarSvg;
       const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';
       const encodedUserJson = encodeURIComponent(JSON.stringify({ userId: u.userId, userName: u.name, department: u.dept, photo: u.photo, totalEmission: u.total }));
+      
+      // Bagian u.avg diganti dengan u.total, dan label kg/day menjadi kgCO₂e
       return `
       <div style="background:white; border:1px solid #e2e8f0; padding:24px 16px; border-radius:16px; text-align:center; position:relative; flex:1; min-width:140px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: transform 0.2s; cursor:pointer;" onclick="openUserDetailModal('${encodedUserJson}')" title="Klik untuk lihat profil">
           <div style="position:absolute; top:-14px; left:50%; transform:translateX(-50%); font-size:28px; filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">${medal}</div>
           <img src="${photoSrc}" style="width:56px; height:56px; border-radius:50%; object-fit:cover; border:3px solid white; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin: 16px auto 12px;">
           <div style="font-weight:800; font-size:14px; color:var(--esg-dark); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(u.name)}</div>
           <div style="font-size:11.5px; color:var(--text-muted); font-weight:600; margin-bottom:14px;">${esc(u.dept)}</div>
-          <div style="color:var(--esg-primary); font-weight:900; font-size:20px; letter-spacing:-0.5px;">${fmt(u.avg)} <small style="font-size:11px; font-weight:700; color:var(--text-muted);">kg/day</small></div>
+          <div style="color:var(--esg-primary); font-weight:900; font-size:20px; letter-spacing:-0.5px;">${fmt(u.total)} <small style="font-size:11px; font-weight:700; color:var(--text-muted);">kgCO₂e</small></div>
       </div>
       `;
-  }).join('') : '<div style="padding:24px; color:#94a3b8; font-size:13px; text-align:center; width:100%;">Tarik data anggota tim untuk melihat klasemen.</div>';
+  }).join('') : '<div style="padding:24px; color:#94a3b8; font-size:13px; text-align:center; width:100%;">Belum ada data terekam untuk departemen & periode ini.</div>';
 }
 
 function renderRankingDataView() {

@@ -4724,14 +4724,56 @@ function populateTeamDeptFilter() {
 }
 
 async function fetchLeaderboard(force=false) {
+  const CACHE_KEY = 'JejakKarbonKu_LEADERBOARD_V20_FAST';
+  const CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
+
+  // ==========================================================
+  // 1) INSTANT PATH — render last known leaderboard immediately
+  // ==========================================================
+  let hasLocal = false;
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (cached && Array.isArray(cached.data) && cached.data.length) {
+      rawLeaderboardData = cached.data;
+      hasLocal = true;
+
+      // Paint UI NOW. Do not wait for Google Apps Script.
+      populateTeamDeptFilter();
+      renderLeaderboardUI();
+      renderDashboardTeamPreview();
+      renderChatRoomsList();
+    }
+  } catch(e) {
+    console.warn('Leaderboard local cache:', e);
+  }
+
+  // ==========================================================
+  // 2) SERVER PATH — refresh silently in background
+  // ==========================================================
   try {
     const resData = await jkFetchJSON(
       SCRIPT_URL + "?action=leaderboard",
-      {ttl:15000, force:force, timeout:10000}
+      {
+        ttl: 30000,
+        force: true,
+        timeout: 8000
+      }
     );
 
-    if (resData && resData.status === 'success') {
-      rawLeaderboardData = Array.isArray(resData.data) ? resData.data : [];
+    if (resData && resData.status === 'success' && Array.isArray(resData.data)) {
+      rawLeaderboardData = resData.data;
+
+      // Persist latest good server result for instant next opening.
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          time: Date.now(),
+          data: rawLeaderboardData
+        }));
+      } catch(e) {
+        // If localStorage is full, keep the in-memory data.
+        console.warn('Leaderboard cache save:', e);
+      }
+
       populateTeamDeptFilter();
       renderLeaderboardUI();
       renderDashboardTeamPreview();
@@ -4741,11 +4783,17 @@ async function fetchLeaderboard(force=false) {
 
     throw new Error('Leaderboard response invalid');
   } catch(e) {
-    // IMPORTANT: never overwrite good existing data with an empty result.
-    if (!rawLeaderboardData || !rawLeaderboardData.length) {
-      $('leaderboardBox').innerHTML =
-        '<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13.5px;">Belum ada data tersedia.</div>';
+    console.warn('Leaderboard background refresh:', e);
+
+    // NEVER erase the good local/server data when network is slow/offline.
+    if (!hasLocal && (!rawLeaderboardData || !rawLeaderboardData.length)) {
+      const box = $('leaderboardBox');
+      if (box) {
+        box.innerHTML =
+          '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13.5px;">Menunggu koneksi data…</div>';
+      }
     }
+
     return Array.isArray(rawLeaderboardData) ? rawLeaderboardData : [];
   }
 }
@@ -5465,10 +5513,23 @@ async function loadTeamData(force=false) {
   let filterVal=deptSelect?deptSelect.value:'ALL';
   if(!filterVal) filterVal='ALL';
 
-  // FAST PATH: leaderboard is the single initial source.
+  // ==========================================================
+  // INSTANT PATH: restore leaderboard from local cache first.
+  // Team Dashboard must NEVER wait for Google Sheets.
+  // ==========================================================
   if(!Array.isArray(rawLeaderboardData)||!rawLeaderboardData.length){
-    await fetchLeaderboard(force);
+    try{
+      const cached=JSON.parse(
+        localStorage.getItem('JejakKarbonKu_LEADERBOARD_V20_FAST')||'null'
+      );
+      if(cached && Array.isArray(cached.data) && cached.data.length){
+        rawLeaderboardData=cached.data;
+      }
+    }catch(e){}
   }
+
+  // Refresh server data in background — do not await it here.
+  fetchLeaderboard(force);
 
   const rows=Array.isArray(rawLeaderboardData)?rawLeaderboardData:[];
   const users={},depts=new Set();

@@ -3824,7 +3824,7 @@ html,body{overflow-x:hidden!important}
     </select>
     <select id="teamDeptFilter" onchange="syncDeptFilter(this.value)" style="padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 700; border: 1px solid #cbd5e1; background: white; color: var(--esg-dark); cursor:pointer;">
     </select>
-    <button onclick="loadTeamData()" class="btn primary" style="width: auto;">🔄 Refresh <span id="td_user_count" style="background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; margin-left:8px; font-size: 11.5px;">0 user</span></button>
+    <button onclick="loadTeamData()" class="btn primary" style="width: auto;">🔄 Refresh <span id="td_user_count" style="background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:10px; margin-left:8px; font-size: 11.5px;">Memuat…</span></button>
 </div>
       </div>
 
@@ -3836,13 +3836,9 @@ html,body{overflow-x:hidden!important}
           <h2>Performa tim, <strong>terlihat nyata.</strong></h2>
           <p>Pantau jejak karbon bersama dan lihat bagaimana setiap anggota berkontribusi pada target efisiensi.</p>
           <div class="team-hero-meta">
-            <span>👥 <b id="tdHeroUsers">0</b> anggota</span>
+            <span>👥 <b id="tdHeroUsers">—</b> anggota</span>
             <span>🌱 Kolaborasi berkelanjutan</span>
           </div>
-        </div>
-        <div class="team-hero-photo-label">
-          <span>VISUAL</span>
-          <b id="teamHeroVisual">Sustainability</b>
         </div>
         <div class="team-hero-dots" id="teamHeroDots" aria-hidden="true"></div>
       </div>
@@ -4018,7 +4014,7 @@ html,body{overflow-x:hidden!important}
                 <div class="input-header"><div class="ico-box">❄️</div> AC Ruangan</div>  
                 <div class="input-row">  
                   <div class="input-field"><label>Jumlah</label><select id="acUnits"></select></div>  
-                  <div class="input-field"><label>Jam/hari</label><input type="number" id="acHours" placeholder="0"></div>  
+                  <div class="input-field"><label>Jam/hari</label><input type="number" id="acHours" placeholder="0" min="0" step="0.1"></div>  
                 </div>  
                 <div class="input-field"><label>Jumlah Orang</label><input type="number" id="acUsers" placeholder="1" min="1"></div>  
               </div>  
@@ -4027,7 +4023,7 @@ html,body{overflow-x:hidden!important}
                 <div class="input-header"><div class="ico-box">💡</div> Lampu Ruangan</div>  
                 <div class="input-row">  
                   <div class="input-field"><label>Jumlah</label><select id="lampUnits"></select></div>  
-                  <div class="input-field"><label>Jam/hari</label><input type="number" id="lampHours" placeholder="0"></div>  
+                  <div class="input-field"><label>Jam/hari</label><input type="number" id="lampHours" placeholder="0" min="0" step="0.1"></div>  
                 </div>  
                 <div class="input-field"><label>Jumlah Orang</label><input type="number" id="lampUsers" placeholder="1" min="1"></div>  
               </div>  
@@ -4036,7 +4032,7 @@ html,body{overflow-x:hidden!important}
                 <div class="input-header"><div class="ico-box">📺</div> TV Bersama</div>  
                 <div class="input-row">  
                   <div class="input-field"><label>Jumlah</label><select id="tvUnits"></select></div>  
-                  <div class="input-field"><label>Jam/hari</label><input type="number" id="tvHours" placeholder="0"></div>  
+                  <div class="input-field"><label>Jam/hari</label><input type="number" id="tvHours" placeholder="0" min="0" step="0.1"></div>  
                 </div>  
                 <div class="input-field"><label>Jumlah Pengguna</label><input type="number" id="tvUsers" placeholder="1" min="1"></div>  
               </div>  
@@ -4524,10 +4520,10 @@ function getRecordFromForm() {
     motorGo: num($('motorGo').value), motorBack: num($('motorBack').value), motorMob: num($('motorMob').value), motorKm,
     carGo: num($('carGo').value), carBack: num($('carBack').value), carMob: num($('carMob').value), carKm,
     laptopHours: num($('laptopHours').value), phoneHours: num($('phoneHours').value),  
-    acUnits: num($('acUnits').value || 1), acHours: num($('acHours').value), acUsers: Math.max(1, num($('acUsers').value || 1)),  
-    lampUnits: num($('lampUnits').value || 1), lampHours: num($('lampHours').value), lampUsers: Math.max(1, num($('lampUsers').value || 1)),  
-    tvUnits: num($('tvUnits').value || 1), tvHours: num($('tvHours').value), tvUsers: Math.max(1, num($('tvUsers').value || 1)),
-    poolUnits: num($('poolUnits').value || 1), poolUsers: Math.max(1, num($('poolUsers').value || 1)), poolGo: num($('poolGo').value), poolBack: num($('poolBack').value)
+    acUnits: Math.max(0, num($('acUnits').value || 1)), acHours: Math.max(0, num($('acHours').value)), acUsers: Math.max(1, num($('acUsers').value || 1)),  
+    lampUnits: Math.max(0, num($('lampUnits').value || 1)), lampHours: Math.max(0, num($('lampHours').value)), lampUsers: Math.max(1, num($('lampUsers').value || 1)),  
+    tvUnits: Math.max(0, num($('tvUnits').value || 1)), tvHours: Math.max(0, num($('tvHours').value)), tvUsers: Math.max(1, num($('tvUsers').value || 1)),
+    poolUnits: Math.max(0, num($('poolUnits').value || 1)), poolUsers: Math.max(1, num($('poolUsers').value || 1)), poolGo: Math.max(0, num($('poolGo').value)), poolBack: Math.max(0, num($('poolBack').value))
   }; 
   return enrichRecord(r);  
 }  
@@ -4535,8 +4531,9 @@ function getRecordFromForm() {
 function enrichRecord(r) {  
   const motorKm = num(r.motorKm); const carKm = num(r.carKm);  
   const personal = { 'Motor': motorKm * FACTORS.motorKm, 'Mobil Pribadi': carKm * FACTORS.carKm, 'Laptop / PC': num(r.laptopHours) * FACTORS.laptopHours, 'Handphone': num(r.phoneHours) * FACTORS.phoneHours };  
-  const poolPerPerson = ((num(r.poolGo) + num(r.poolBack)) * num(r.poolUnits || 1)) * FACTORS.carKm / Math.max(1, num(r.poolUsers || 1));
-  const collective = { 'AC Bersama': num(r.acUnits || 1) * num(r.acHours) * FACTORS.acHours / Math.max(1, num(r.acUsers || 1)), 'Lampu Bersama': num(r.lampUnits || 1) * num(r.lampHours) * FACTORS.lampHours / Math.max(1, num(r.lampUsers || 1)), 'TV Bersama': num(r.tvUnits || 1) * num(r.tvHours) * FACTORS.tvHours / Math.max(1, num(r.tvUsers || 1)), 'Mobil Perusahaan (Carpool)': poolPerPerson };  
+  const safe = v => Math.max(0, num(v));
+  const poolPerPerson = ((safe(r.poolGo) + safe(r.poolBack)) * Math.max(0, num(r.poolUnits || 1))) * FACTORS.carKm / Math.max(1, num(r.poolUsers || 1));
+  const collective = { 'AC Bersama': Math.max(0, num(r.acUnits || 1)) * safe(r.acHours) * FACTORS.acHours / Math.max(1, num(r.acUsers || 1)), 'Lampu Bersama': Math.max(0, num(r.lampUnits || 1)) * safe(r.lampHours) * FACTORS.lampHours / Math.max(1, num(r.lampUsers || 1)), 'TV Bersama': Math.max(0, num(r.tvUnits || 1)) * safe(r.tvHours) * FACTORS.tvHours / Math.max(1, num(r.tvUsers || 1)), 'Mobil Perusahaan (Carpool)': poolPerPerson };  
   const breakdown = { ...personal, ...collective };
   const personalTotal = Object.values(personal).reduce((a, v) => a + num(v), 0); 
   const collectiveTotal = Object.values(collective).reduce((a, v) => a + num(v), 0); 
@@ -5442,6 +5439,8 @@ async function loadTeamData() {
         }
 
         $('td_user_count').textContent = `${validUsersInDept} user`;
+        const heroUsers = $('tdHeroUsers');
+        if (heroUsers) heroUsers.textContent = String(validUsersInDept);
     } catch (e) {
         toast('⚠️ Terjadi gangguan koneksi saat menarik rincian data tim.');
     }
@@ -6912,11 +6911,10 @@ document.addEventListener('DOMContentLoaded',function(){
   let teamHeroTimer=null,teamHeroIndex=0;
   function setTeamHero(index,immediate){
     const hero=document.getElementById('teamHero'); if(!hero)return;
-    const bg=hero.querySelector('.team-hero-bg'),label=document.getElementById('teamHeroVisual'),dots=document.getElementById('teamHeroDots'),item=TEAM_HERO_IMAGES[index];
+    const bg=hero.querySelector('.team-hero-bg'),dots=document.getElementById('teamHeroDots'),item=TEAM_HERO_IMAGES[index];
     if(!bg||!item)return;
     const apply=()=>{
       bg.style.setProperty('--team-hero-bg',`url("${item.url}")`);
-      if(label)label.textContent=item.label;
       if(dots)dots.innerHTML=TEAM_HERO_IMAGES.map((_,i)=>`<i class="${i===index?'active':''}"></i>`).join('');
     };
     if(immediate){apply();return}
@@ -6928,7 +6926,10 @@ document.addEventListener('DOMContentLoaded',function(){
     teamHeroIndex=0;setTeamHero(0,true);clearInterval(teamHeroTimer);
     teamHeroTimer=setInterval(()=>{teamHeroIndex=(teamHeroIndex+1)%TEAM_HERO_IMAGES.length;setTeamHero(teamHeroIndex,false)},7000);
     const count=document.getElementById('td_user_count'),users=document.getElementById('tdHeroUsers');
-    if(count&&users)users.textContent=parseInt((count.textContent||'0').replace(/\D/g,''),10)||0;
+    if(count&&users){
+      const parsed=parseInt((count.textContent||'').replace(/\D/g,''),10);
+      if(Number.isFinite(parsed)) users.textContent=String(parsed);
+    }
   };
   document.addEventListener('DOMContentLoaded',function(){
     setTimeout(()=>{if(typeof window.startTeamHeroMotion==='function')window.startTeamHeroMotion()},200);
@@ -7016,3 +7017,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
 </body>  
 </html>
+<style id="v16-team-hero-input-fix">
+.team-hero-photo-label{display:none!important}
+.team-hero-dots{z-index:5}
+#pane2 input[type="number"]:invalid{border-color:#ef4444!important;background:#fff7f7!important}
+#pane2 input[type="number"]:focus{border-color:var(--esg-primary)}
+</style>

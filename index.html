@@ -3285,6 +3285,29 @@ html,body{overflow-x:hidden!important}
 })();
 </script>
 
+
+<style id="v20-fast-status">
+#v20FastStatus{
+ position:fixed;right:14px;bottom:12px;z-index:9998;
+ padding:6px 9px;border-radius:999px;
+ background:rgba(255,255,255,.86);
+ border:1px solid rgba(8,127,91,.12);
+ box-shadow:0 6px 20px rgba(0,0,0,.06);
+ backdrop-filter:blur(10px);
+ font:800 8px/1 system-ui;color:#087f5b;
+ pointer-events:none;opacity:.72;
+}
+</style>
+<script id="v20-fast-status">
+document.addEventListener('DOMContentLoaded',()=>{
+ if(document.getElementById('v20FastStatus'))return;
+ const e=document.createElement('div');
+ e.id='v20FastStatus';
+ e.innerHTML='● Data siap';
+ document.body.appendChild(e);
+});
+</script>
+
 </head>  
 <body>  
 
@@ -4502,7 +4525,7 @@ function saveLocal() {
   localStorage.setItem(BASE_KEY, JSON.stringify(state)); 
 }  
   
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywJqm6ZqVLIZgRikIcvk8Q76GY7FSP5JRUd6u0EZuDiO8ZvStG_8GhIv7ybkBe5lc8og/exec'; 
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyyXDrpxvwN_1Qpy3kYArC_OMh1czJS_oIXN8k_Rl8fmCSDm1fI6gEWklfC6rJ-fDe3hg/exec'; 
 
 // ==============================================
 // === FETCH CHAT & GROUPS DARI SERVER (SYNC) ===
@@ -5438,129 +5461,135 @@ function syncDeptFilter(val) {
 }
 
 async function loadTeamData(force=false) {
-    let deptSelect = $('teamDeptFilter');
-    let filterVal = deptSelect ? deptSelect.value : 'ALL';
-    if (!filterVal) filterVal = 'ALL';
+  const deptSelect=$('teamDeptFilter');
+  let filterVal=deptSelect?deptSelect.value:'ALL';
+  if(!filterVal) filterVal='ALL';
 
-    // ALWAYS derive the complete user list from leaderboard.
-    // Do not trust leaderboard.department because it may be missing/old.
-    if (!Array.isArray(rawLeaderboardData) || rawLeaderboardData.length === 0) {
-        await fetchLeaderboard(force);
+  // FAST PATH: leaderboard is the single initial source.
+  if(!Array.isArray(rawLeaderboardData)||!rawLeaderboardData.length){
+    await fetchLeaderboard(force);
+  }
+
+  const rows=Array.isArray(rawLeaderboardData)?rawLeaderboardData:[];
+  const users={},depts=new Set();
+
+  rows.forEach(r=>{
+    const uid=String(r.userId||'').trim();
+    if(!uid||uid==='undefined'||uid==='null')return;
+    const dept=String(r.department||'LAINNYA').trim().toUpperCase();
+    depts.add(dept);
+    if(!users[uid]){
+      users[uid]={
+        userId:uid,
+        userName:r.userName||uid,
+        department:r.department||'Lainnya',
+        photo:r.photo||'',
+        total:0,
+        individual:0,
+        shared:0
+      };
     }
+    users[uid].total+=Math.max(0,num(r.emission));
+    users[uid].individual+=Math.max(0,num(r.individualEmission??r.individual??r.indiv??0));
+    users[uid].shared+=Math.max(0,num(r.collectiveEmission??r.collective??r.shared??0));
+    if(r.userName)users[uid].userName=r.userName;
+    if(r.photo)users[uid].photo=r.photo;
+    if(r.department)users[uid].department=r.department;
+  });
 
-    let allIds = [...new Set(
-        (Array.isArray(rawLeaderboardData) ? rawLeaderboardData : [])
-        .map(u => String(u.userId || '').trim())
-        .filter(id => id && id !== 'undefined' && id !== 'null')
-    )];
+  const myId=String(state.profile.userId||'').trim();
+  if(myId&&!users[myId]){
+    users[myId]={
+      userId:myId,
+      userName:state.profile.userName||myId,
+      department:state.profile.department||'Lainnya',
+      photo:state.profile.photo||'',
+      total:0,individual:0,shared:0
+    };
+  }
 
-    const myId = String(state.profile.userId || '').trim();
-    if (myId && !allIds.includes(myId)) allIds.push(myId);
+  const selected=Object.values(users).filter(u=>
+    filterVal==='ALL' ||
+    String(u.department||'').trim().toUpperCase()===String(filterVal).trim().toUpperCase()
+  );
 
-    $('td_user_count').textContent = `Memuat...`;
-    $('td_total').innerHTML = '<span style="font-size:16px;">Memuat...</span>';
-    $('td_indiv').textContent = '...';
-    $('td_shared').textContent = '...';
+  // Instant KPI render from leaderboard.
+  $('td_user_count').textContent=`${selected.length} user`;
+  $('td_total').innerHTML=`<span style="font-size:22px;">${fmt(selected.reduce((s,u)=>s+u.total,0))} kgCO₂e</span>`;
+  $('td_indiv').textContent=fmt(selected.reduce((s,u)=>s+u.individual,0))||'0,00';
+  $('td_shared').textContent=fmt(selected.reduce((s,u)=>s+u.shared,0))||'0,00';
+  if($('tdHeroUsers'))$('tdHeroUsers').textContent=String(selected.length);
 
-    teamDetailedRecords = [];
+  let opt='<option value="ALL">🌐 Semua Departemen (Corporate)</option>';
+  [...depts].sort().forEach(d=>opt+=`<option value="${esc(d)}">🏢 Departemen: ${esc(d)}</option>`);
+  if(deptSelect)deptSelect.innerHTML=opt;
+  if($('rtDeptFilter'))$('rtDeptFilter').innerHTML=opt;
+  if(deptSelect)deptSelect.value=depts.has(String(filterVal).trim().toUpperCase())?filterVal:'ALL';
+  if($('rtDeptFilter'))$('rtDeptFilter').value=deptSelect?deptSelect.value:'ALL';
 
-    try {
-        // Fetch user detail records in small parallel batches.
-        // This keeps the speed benefit without dropping users.
-        const results = new Array(allIds.length);
-        let cursor = 0;
-        const CONCURRENCY = 6;
+  // Use last detailed snapshot immediately. Do not block navigation.
+  let usedSnapshot=false;
+  try{
+    const raw=localStorage.getItem('JejakKarbonKu_TEAM_SNAPSHOT_V20');
+    const snap=raw?JSON.parse(raw):null;
+    if(snap&&Array.isArray(snap.records)&&snap.records.length){
+      teamDetailedRecords=snap.records;
+      usedSnapshot=true;
+    }
+  }catch(e){}
 
-        async function worker() {
-            while (true) {
-                const index = cursor++;
-                if (index >= allIds.length) return;
+  renderTeamDashboardView();
+  renderRankingDataView();
 
-                const uid = allIds[index];
-                try {
-                    const data = await jkFetchJSON(
-                        SCRIPT_URL + "?userId=" + encodeURIComponent(uid),
-                        {ttl:20000, force:force, timeout:10000}
-                    );
-                    results[index] = { uid, data };
-                } catch (err) {
-                    results[index] = { uid, data:null };
-                }
-            }
-        }
+  // Do NOT fan out requests on every navigation.
+  // Refresh detailed data at most every 2 minutes, in background.
+  const last=Number(localStorage.getItem('JejakKarbonKu_TEAM_SYNC_V20')||0);
+  const shouldRefresh=force || !usedSnapshot || (Date.now()-last>120000);
+  if(!shouldRefresh)return;
 
-        await Promise.all(
-            Array.from(
-                {length: Math.min(CONCURRENCY, Math.max(1, allIds.length))},
-                () => worker()
-            )
-        );
+  localStorage.setItem('JejakKarbonKu_TEAM_SYNC_V20',String(Date.now()));
 
-        let validUsersInDept = 0;
-        let dynamicDepts = new Set();
+  // Background detail sync — ONE request for the entire team.
+  setTimeout(async()=>{
+    try{
+      const snapshot=await jkFetchJSON(
+        SCRIPT_URL+"?action=team_snapshot",
+        {ttl:120000,force:true,timeout:10000}
+      );
 
-        results.forEach(item => {
-            if (!item || !item.data) return;
-
-            const data = item.data;
-            if (data.status !== 'success' || !Array.isArray(data.records)) return;
-
-            // Authoritative department comes from the user's server response.
-            const actualDept = String(data.department || 'LAINNYA').trim().toUpperCase();
-            dynamicDepts.add(actualDept);
-
-            if (filterVal !== 'ALL' && actualDept !== String(filterVal).trim().toUpperCase()) {
-                return;
-            }
-
-            validUsersInDept++;
-            const uid = item.uid;
-
-            // Keep V17's de-duplication rule: one user/date = one record.
-            const uniqueRecordsByDate = {};
-            data.records.forEach(r => {
-                const dateKey = r.tanggalEmisi || r.date;
-                if (dateKey) uniqueRecordsByDate[dateKey] = {...r};
+      if(snapshot && snapshot.status==='success' && Array.isArray(snapshot.participants)){
+        const detailed=[];
+        snapshot.participants.forEach(u=>{
+          (Array.isArray(u.records)?u.records:[]).forEach(r=>{
+            detailed.push({
+              ...r,
+              userId:u.userId,
+              userName:u.userName||u.userId,
+              department:u.department||'Lainnya',
+              team:u.team||'',
+              pg:u.pg||'',
+              role:u.role||'',
+              photo:u.photo||''
             });
-
-            Object.values(uniqueRecordsByDate).forEach(r => {
-                r.userId = uid;
-                r.userName = data.userName || uid;
-                r.department = data.department || 'Lainnya';
-                r.photo = data.photo || '';
-                teamDetailedRecords.push(r);
-            });
+          });
         });
 
-        // Rebuild department options from authoritative user responses.
-        const currentVal = filterVal;
-        let html = '<option value="ALL">🌐 Semua Departemen (Corporate)</option>';
-        [...dynamicDepts].filter(Boolean).sort().forEach(d => {
-            html += `<option value="${esc(d)}">🏢 Departemen: ${esc(d)}</option>`;
-        });
-
-        if (deptSelect) deptSelect.innerHTML = html;
-        if ($('rtDeptFilter')) $('rtDeptFilter').innerHTML = html;
-
-        if ([...dynamicDepts].includes(currentVal)) {
-            if (deptSelect) deptSelect.value = currentVal;
-            if ($('rtDeptFilter')) $('rtDeptFilter').value = currentVal;
-        } else {
-            if (deptSelect) deptSelect.value = filterVal;
-            if ($('rtDeptFilter')) $('rtDeptFilter').value = filterVal;
+        if(detailed.length){
+          teamDetailedRecords=detailed;
+          try{
+            localStorage.setItem(
+              'JejakKarbonKu_TEAM_SNAPSHOT_V20',
+              JSON.stringify({time:Date.now(),records:detailed})
+            );
+          }catch(e){}
+          renderTeamDashboardView();
+          renderRankingDataView();
         }
-
-        $('td_user_count').textContent = `${validUsersInDept} user`;
-        const heroUsers = $('tdHeroUsers');
-        if (heroUsers) heroUsers.textContent = String(validUsersInDept);
-
-    } catch (e) {
-        console.warn('loadTeamData:', e);
-        toast('⚠️ Terjadi gangguan koneksi saat menarik rincian data tim.');
+      }
+    }catch(e){
+      console.warn('team_snapshot:',e);
     }
-
-    renderTeamDashboardView();
-    renderRankingDataView();
+  },50);
 }
 
 function renderTeamDashboardView() {
@@ -6495,7 +6524,7 @@ async function saveRecordAndServer() {
   try {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     toast(`✅ Transaksi berhasil: Data ${record.date} tervalidasi di pusat.`);
-    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); fetchLeaderboard(true); loadTeamData(true);
+    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); jkInvalidate('action=leaderboard'); fetchLeaderboard(true); loadTeamData(false);
   } catch(err) { toast('❌ Failover ke mode lokal. Jaringan pusat tidak merespon.'); }
 }
 
@@ -6518,7 +6547,7 @@ async function deleteRecordAndServer() {
   try {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     toast(`🗑️ Eksekusi paripurna. Catatan ${d} bersih.`);
-    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); fetchLeaderboard(true); loadTeamData(true);
+    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); jkInvalidate('action=leaderboard'); fetchLeaderboard(true); loadTeamData(false);
   } catch(err) { toast('❌ Server pusat menolak proses delegasi.'); }
 }
 

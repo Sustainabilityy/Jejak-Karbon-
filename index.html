@@ -3224,47 +3224,63 @@ html,body{overflow-x:hidden!important}
 </style>
 
 
-<script id="v18-fast-data-layer">
+<script id="v19-safe-fast-data">
 (function(){
-  const FAST_TIMEOUT=8500;
-  window.__fastData=window.__fastData||{cache:new Map(),inflight:new Map(),teamSnapshotKey:'JejakKarbonKu_FAST_TEAM_V18',lastServerSync:0};
+  const TTL = { leaderboard:15000, user:20000, chat:10000 };
+  const TIMEOUT = 10000;
 
-  window.fastFetchJSON=async function(url,opts={}){
-    const key=String(url), ttl=opts.ttl||0, force=!!opts.force, now=Date.now();
+  window.__jkFast = window.__jkFast || {
+    cache:new Map(),
+    inflight:new Map()
+  };
+
+  window.jkFetchJSON = function(url, opts={}){
+    const key=String(url);
+    const ttl=opts.ttl||0;
+    const force=!!opts.force;
+    const timeout=opts.timeout||TIMEOUT;
+    const now=Date.now();
+
     if(!force && ttl){
-      const c=window.__fastData.cache.get(key);
-      if(c && now-c.time<ttl) return c.data;
+      const hit=window.__jkFast.cache.get(key);
+      if(hit && (now-hit.time)<ttl) return Promise.resolve(hit.data);
     }
-    if(window.__fastData.inflight.has(key)) return window.__fastData.inflight.get(key);
+
+    if(window.__jkFast.inflight.has(key)){
+      return window.__jkFast.inflight.get(key);
+    }
 
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),opts.timeout||FAST_TIMEOUT);
-    const p=fetch(url,{method:'GET',cache:'no-store',credentials:'omit',signal:controller.signal})
-      .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
-      .then(data=>{if(ttl)window.__fastData.cache.set(key,{time:Date.now(),data});return data;})
-      .finally(()=>{clearTimeout(timer);window.__fastData.inflight.delete(key);});
-    window.__fastData.inflight.set(key,p);
+    const timer=setTimeout(()=>controller.abort(),timeout);
+
+    const p=fetch(url,{
+      method:'GET',
+      cache:'no-store',
+      credentials:'omit',
+      signal:controller.signal
+    })
+    .then(res=>{
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return res.json();
+    })
+    .then(data=>{
+      if(ttl) window.__jkFast.cache.set(key,{time:Date.now(),data});
+      return data;
+    })
+    .finally(()=>{
+      clearTimeout(timer);
+      window.__jkFast.inflight.delete(key);
+    });
+
+    window.__jkFast.inflight.set(key,p);
     return p;
   };
 
-  window.invalidateFastData=function(match){
-    const needle=String(match||'');
-    for(const key of window.__fastData.cache.keys()){
-      if(!needle||key.includes(needle))window.__fastData.cache.delete(key);
+  window.jkInvalidate=function(part){
+    const p=String(part||'');
+    for(const key of window.__jkFast.cache.keys()){
+      if(!p || key.includes(p)) window.__jkFast.cache.delete(key);
     }
-  };
-
-  window.saveFastTeamSnapshot=function(payload){
-    try{localStorage.setItem(window.__fastData.teamSnapshotKey,JSON.stringify({time:Date.now(),data:payload}));}catch(e){}
-  };
-
-  window.getFastTeamSnapshot=function(maxAge=10*60*1000){
-    try{
-      const raw=localStorage.getItem(window.__fastData.teamSnapshotKey);
-      if(!raw)return null;
-      const o=JSON.parse(raw);
-      return o&&o.data&&(Date.now()-o.time)<maxAge?o.data:null;
-    }catch(e){return null;}
   };
 })();
 </script>
@@ -4493,7 +4509,7 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbywJqm6ZqVLIZgRikIcv
 // ==============================================
 async function fetchChatMessages() {
   try {
-    const data = await fastFetchJSON(SCRIPT_URL + "?action=get_chats",{ttl:10000,timeout:7000});
+    const data = await jkFetchJSON(SCRIPT_URL + "?action=get_chats",{ttl:10000,timeout:10000});
     if(data.status === 'success' && data.data) {
       allChatMessages = data.data.map(serverMsg => {
         let localExist = allChatMessages.find(m => String(m.timestamp) === String(serverMsg.timestamp));
@@ -4684,42 +4700,30 @@ function populateTeamDeptFilter() {
     }
 }
 
-async function fetchLeaderboard(force=false){
-  const url=SCRIPT_URL+"?action=leaderboard";
-  try{
-    if(!force&&rawLeaderboardData&&rawLeaderboardData.length){
-      renderLeaderboardUI();
-      renderDashboardTeamPreview();
-    }
-    const resData=await fastFetchJSON(url,{ttl:20000,force,timeout:8500});
-    if(resData&&resData.status==='success'){
-      rawLeaderboardData=Array.isArray(resData.data)?resData.data:[];
-      window.__fastData.lastServerSync=Date.now();
-      try{localStorage.setItem('JejakKarbonKu_FAST_LEADERBOARD_V18',JSON.stringify({time:Date.now(),data:rawLeaderboardData}));}catch(e){}
+async function fetchLeaderboard(force=false) {
+  try {
+    const resData = await jkFetchJSON(
+      SCRIPT_URL + "?action=leaderboard",
+      {ttl:15000, force:force, timeout:10000}
+    );
+
+    if (resData && resData.status === 'success') {
+      rawLeaderboardData = Array.isArray(resData.data) ? resData.data : [];
       populateTeamDeptFilter();
       renderLeaderboardUI();
       renderDashboardTeamPreview();
       renderChatRoomsList();
       return rawLeaderboardData;
     }
-    throw new Error('Invalid leaderboard response');
-  }catch(e){
-    try{
-      const raw=localStorage.getItem('JejakKarbonKu_FAST_LEADERBOARD_V18');
-      const cached=raw?JSON.parse(raw):null;
-      if(cached&&Array.isArray(cached.data)&&(Date.now()-cached.time)<10*60*1000){
-        rawLeaderboardData=cached.data;
-        populateTeamDeptFilter();
-        renderLeaderboardUI();
-        renderDashboardTeamPreview();
-        renderChatRoomsList();
-        return rawLeaderboardData;
-      }
-    }catch(err){}
-    if(!rawLeaderboardData||!rawLeaderboardData.length){
-      $('leaderboardBox').innerHTML='<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13.5px;">Data sedang dimuat…</div>';
+
+    throw new Error('Leaderboard response invalid');
+  } catch(e) {
+    // IMPORTANT: never overwrite good existing data with an empty result.
+    if (!rawLeaderboardData || !rawLeaderboardData.length) {
+      $('leaderboardBox').innerHTML =
+        '<div style="text-align:center; padding:24px; color:var(--text-muted); font-size:13.5px;">Belum ada data tersedia.</div>';
     }
-    return [];
+    return Array.isArray(rawLeaderboardData) ? rawLeaderboardData : [];
   }
 }
 
@@ -5433,87 +5437,130 @@ function syncDeptFilter(val) {
     loadTeamData();
 }
 
-async function loadTeamData(force=false){
-  const deptSelect=$('teamDeptFilter');
-  let filterVal=deptSelect?deptSelect.value:'ALL';
-  if(!filterVal)filterVal='ALL';
+async function loadTeamData(force=false) {
+    let deptSelect = $('teamDeptFilter');
+    let filterVal = deptSelect ? deptSelect.value : 'ALL';
+    if (!filterVal) filterVal = 'ALL';
 
-  const rows=Array.isArray(rawLeaderboardData)?rawLeaderboardData:[];
-  const users={},dynamicDepts=new Set(),myId=String(state.profile.userId||'').trim();
-
-  rows.forEach(r=>{
-    const uid=String(r.userId||'').trim();
-    if(!uid||uid==='undefined')return;
-    const dept=String(r.department||'LAINNYA').trim().toUpperCase();
-    dynamicDepts.add(dept);
-    if(!users[uid])users[uid]={userId:uid,userName:r.userName||uid,department:r.department||'Lainnya',photo:r.photo||'',total:0};
-    users[uid].total+=Math.max(0,num(r.emission));
-    if(r.userName)users[uid].userName=r.userName;
-    if(r.photo)users[uid].photo=r.photo;
-    if(r.department)users[uid].department=r.department;
-  });
-
-  if(myId&&!users[myId])users[myId]={userId:myId,userName:state.profile.userName||myId,department:state.profile.department||'Lainnya',photo:state.profile.photo||'',total:0};
-
-  const filtered=Object.values(users).filter(u=>filterVal==='ALL'||String(u.department||'').trim().toUpperCase()===String(filterVal).trim().toUpperCase());
-  $('td_user_count').textContent=`${filtered.length} user`;
-  $('td_total').innerHTML=`<span style="font-size:22px;">${fmt(filtered.reduce((s,u)=>s+u.total,0))} kgCO₂e</span>`;
-  $('td_indiv').textContent='—';
-  $('td_shared').textContent='—';
-  if($('tdHeroUsers'))$('tdHeroUsers').textContent=String(filtered.length);
-
-  let options='<option value="ALL">🌐 Semua Departemen (Corporate)</option>';
-  [...dynamicDepts].filter(Boolean).sort().forEach(d=>options+=`<option value="${esc(d)}">🏢 Departemen: ${esc(d)}</option>`);
-  if(deptSelect)deptSelect.innerHTML=options;
-  if($('rtDeptFilter'))$('rtDeptFilter').innerHTML=options;
-  if([...dynamicDepts].includes(String(filterVal).trim().toUpperCase())){
-    if(deptSelect)deptSelect.value=String(filterVal).trim().toUpperCase();
-    if($('rtDeptFilter'))$('rtDeptFilter').value=String(filterVal).trim().toUpperCase();
-  }else{
-    if(deptSelect)deptSelect.value=filterVal;
-    if($('rtDeptFilter'))$('rtDeptFilter').value=filterVal;
-  }
-
-  // Instant render from the last detailed snapshot.
-  const cached=window.getFastTeamSnapshot?window.getFastTeamSnapshot():null;
-  if(!force&&cached&&Array.isArray(cached.records)&&cached.records.length){
-    teamDetailedRecords=cached.records;
-    renderTeamDashboardView();
-    renderRankingDataView();
-  }else if(!teamDetailedRecords.length){
-    renderTeamDashboardView();
-    renderRankingDataView();
-  }
-
-  // Revalidate details in background, bounded to 6 concurrent requests.
-  const ids=filtered.map(u=>u.userId);
-  const results=new Array(ids.length);
-  let cursor=0;
-  const worker=async()=>{
-    while(cursor<ids.length){
-      const i=cursor++,uid=ids[i];
-      try{
-        results[i]={uid,data:await fastFetchJSON(SCRIPT_URL+"?userId="+encodeURIComponent(uid),{ttl:30000,force,timeout:7000})};
-      }catch(e){results[i]={uid,data:null};}
+    // ALWAYS derive the complete user list from leaderboard.
+    // Do not trust leaderboard.department because it may be missing/old.
+    if (!Array.isArray(rawLeaderboardData) || rawLeaderboardData.length === 0) {
+        await fetchLeaderboard(force);
     }
-  };
-  await Promise.all(Array.from({length:Math.min(6,Math.max(1,ids.length))},worker));
 
-  const detailed=[];
-  results.forEach(item=>{
-    const data=item&&item.data;
-    if(!data||data.status!=='success'||!Array.isArray(data.records))return;
-    const unique={};
-    data.records.forEach(r=>{const k=r.tanggalEmisi||r.date;if(k)unique[k]=r;});
-    Object.values(unique).forEach(r=>detailed.push({...r,userId:item.uid,userName:data.userName||item.uid,department:data.department||'Lainnya',photo:data.photo||''}));
-  });
+    let allIds = [...new Set(
+        (Array.isArray(rawLeaderboardData) ? rawLeaderboardData : [])
+        .map(u => String(u.userId || '').trim())
+        .filter(id => id && id !== 'undefined' && id !== 'null')
+    )];
 
-  if(detailed.length){
-    teamDetailedRecords=detailed;
-    if(window.saveFastTeamSnapshot)window.saveFastTeamSnapshot({records:detailed});
-  }
-  renderTeamDashboardView();
-  renderRankingDataView();
+    const myId = String(state.profile.userId || '').trim();
+    if (myId && !allIds.includes(myId)) allIds.push(myId);
+
+    $('td_user_count').textContent = `Memuat...`;
+    $('td_total').innerHTML = '<span style="font-size:16px;">Memuat...</span>';
+    $('td_indiv').textContent = '...';
+    $('td_shared').textContent = '...';
+
+    teamDetailedRecords = [];
+
+    try {
+        // Fetch user detail records in small parallel batches.
+        // This keeps the speed benefit without dropping users.
+        const results = new Array(allIds.length);
+        let cursor = 0;
+        const CONCURRENCY = 6;
+
+        async function worker() {
+            while (true) {
+                const index = cursor++;
+                if (index >= allIds.length) return;
+
+                const uid = allIds[index];
+                try {
+                    const data = await jkFetchJSON(
+                        SCRIPT_URL + "?userId=" + encodeURIComponent(uid),
+                        {ttl:20000, force:force, timeout:10000}
+                    );
+                    results[index] = { uid, data };
+                } catch (err) {
+                    results[index] = { uid, data:null };
+                }
+            }
+        }
+
+        await Promise.all(
+            Array.from(
+                {length: Math.min(CONCURRENCY, Math.max(1, allIds.length))},
+                () => worker()
+            )
+        );
+
+        let validUsersInDept = 0;
+        let dynamicDepts = new Set();
+
+        results.forEach(item => {
+            if (!item || !item.data) return;
+
+            const data = item.data;
+            if (data.status !== 'success' || !Array.isArray(data.records)) return;
+
+            // Authoritative department comes from the user's server response.
+            const actualDept = String(data.department || 'LAINNYA').trim().toUpperCase();
+            dynamicDepts.add(actualDept);
+
+            if (filterVal !== 'ALL' && actualDept !== String(filterVal).trim().toUpperCase()) {
+                return;
+            }
+
+            validUsersInDept++;
+            const uid = item.uid;
+
+            // Keep V17's de-duplication rule: one user/date = one record.
+            const uniqueRecordsByDate = {};
+            data.records.forEach(r => {
+                const dateKey = r.tanggalEmisi || r.date;
+                if (dateKey) uniqueRecordsByDate[dateKey] = {...r};
+            });
+
+            Object.values(uniqueRecordsByDate).forEach(r => {
+                r.userId = uid;
+                r.userName = data.userName || uid;
+                r.department = data.department || 'Lainnya';
+                r.photo = data.photo || '';
+                teamDetailedRecords.push(r);
+            });
+        });
+
+        // Rebuild department options from authoritative user responses.
+        const currentVal = filterVal;
+        let html = '<option value="ALL">🌐 Semua Departemen (Corporate)</option>';
+        [...dynamicDepts].filter(Boolean).sort().forEach(d => {
+            html += `<option value="${esc(d)}">🏢 Departemen: ${esc(d)}</option>`;
+        });
+
+        if (deptSelect) deptSelect.innerHTML = html;
+        if ($('rtDeptFilter')) $('rtDeptFilter').innerHTML = html;
+
+        if ([...dynamicDepts].includes(currentVal)) {
+            if (deptSelect) deptSelect.value = currentVal;
+            if ($('rtDeptFilter')) $('rtDeptFilter').value = currentVal;
+        } else {
+            if (deptSelect) deptSelect.value = filterVal;
+            if ($('rtDeptFilter')) $('rtDeptFilter').value = filterVal;
+        }
+
+        $('td_user_count').textContent = `${validUsersInDept} user`;
+        const heroUsers = $('tdHeroUsers');
+        if (heroUsers) heroUsers.textContent = String(validUsersInDept);
+
+    } catch (e) {
+        console.warn('loadTeamData:', e);
+        toast('⚠️ Terjadi gangguan koneksi saat menarik rincian data tim.');
+    }
+
+    renderTeamDashboardView();
+    renderRankingDataView();
 }
 
 function renderTeamDashboardView() {
@@ -6448,7 +6495,7 @@ async function saveRecordAndServer() {
   try {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     toast(`✅ Transaksi berhasil: Data ${record.date} tervalidasi di pusat.`);
-    invalidateFastData('action=leaderboard'); fetchLeaderboard(true); loadTeamData(true);
+    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); fetchLeaderboard(true); loadTeamData(true);
   } catch(err) { toast('❌ Failover ke mode lokal. Jaringan pusat tidak merespon.'); }
 }
 
@@ -6471,7 +6518,7 @@ async function deleteRecordAndServer() {
   try {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     toast(`🗑️ Eksekusi paripurna. Catatan ${d} bersih.`);
-    invalidateFastData('action=leaderboard'); fetchLeaderboard(true); loadTeamData(true);
+    jkInvalidate('action=leaderboard'); jkInvalidate('userId='); fetchLeaderboard(true); loadTeamData(true);
   } catch(err) { toast('❌ Server pusat menolak proses delegasi.'); }
 }
 
@@ -6497,7 +6544,7 @@ async function saveProfileToServer() {
   try {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
     toast('✅ Sinkronisasi profil sukses berlabuh di master.');
-    renderDashboard(); fetchLeaderboard();
+    renderDashboard(); jkInvalidate('action=leaderboard'); fetchLeaderboard(true);
   } catch(err) { toast('❌ Gagal melakukan penetrasi profil ke node utama.'); }
 }
 
@@ -6545,7 +6592,7 @@ function processServerDataAndLogin(data, uid, pwd) {
     }
   }
   saveLocal(); localStorage.setItem(SESSION_AUTH_KEY, 'true');
-  loadProfile(); renderDashboard(); fetchLeaderboard(); fetchChatMessages();
+  loadProfile(); renderDashboard(); jkInvalidate('action=leaderboard'); fetchLeaderboard(true); fetchChatMessages();
   $('authModal').style.display = 'none';
 }
 
@@ -6556,7 +6603,8 @@ $('authLoginBtn').onclick = async () => {
 
   toast('⏳ Autentikasi sesi...');
   try {
-    const data = await fastFetchJSON(SCRIPT_URL + "?userId=" + encodeURIComponent(uid),{force:true,timeout:8500});
+    const res = await fetch(SCRIPT_URL + "?userId=" + encodeURIComponent(uid));
+    const data = await res.json();
     if(data.status === 'success') {
       const serverPwd = String(data.password || "").trim(), inputPwd = String(pwd).trim();
       if (serverPwd === "") {
@@ -6584,7 +6632,7 @@ $('authSubmitRegisterBtn').onclick = async () => {
     await fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: "register", userId: uid, password: pwd, userName: name, department: $('regDept').value.trim(), team: '', pg: '', role: '' }) });
     state.profile.userId = uid; state.profile.password = pwd; state.profile.userName = name; state.profile.department = $('regDept').value.trim(); 
     saveLocal(); localStorage.setItem(SESSION_AUTH_KEY, 'true');
-    loadProfile(); renderDashboard(); fetchLeaderboard(); fetchChatMessages();
+    loadProfile(); renderDashboard(); jkInvalidate('action=leaderboard'); fetchLeaderboard(true); fetchChatMessages();
     $('authModal').style.display = 'none'; toast('✅ Selesai dirakit. Nikmati dashboardnya!');
   } catch(e) { toast('❌ Transmisi gagal.'); }
 };
@@ -6857,7 +6905,7 @@ function init() {
 
   const isSessionAuth = localStorage.getItem(SESSION_AUTH_KEY);
   if (!isSessionAuth) { $('authModal').style.display = 'flex'; }
-  else { $('authModal').style.display = 'none'; fetchLeaderboard(); fetchChatMessages(); }
+  else { $('authModal').style.display = 'none'; fetchLeaderboard(false); if(document.getElementById('chat')?.classList.contains('active')) fetchChatMessages(); }
 
   loadProfile(); setForm({ date: tIso }); bind();
   renderDashboard();
@@ -6867,7 +6915,8 @@ function init() {
   else $('saveRecordBtn').innerHTML = '☁️ Hitung & Simpan ke Server';
   
   setInterval(() => {
-      if(localStorage.getItem(SESSION_AUTH_KEY) && document.getElementById('chat')?.classList.contains('active')) {
+      if(localStorage.getItem(SESSION_AUTH_KEY) &&
+         document.getElementById('chat')?.classList.contains('active')) {
           fetchChatMessages();
       }
   }, 15000);
@@ -7078,21 +7127,6 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init,120));
-})();
-</script>
-
-
-<script id="v18-sync-status">
-(function(){
-  document.addEventListener('DOMContentLoaded',function(){
-    if(document.getElementById('v18SyncStatus'))return;
-    const el=document.createElement('div');
-    el.id='v18SyncStatus';
-    el.innerHTML='<span></span> Data siap';
-    el.style.cssText='position:fixed;right:14px;bottom:12px;z-index:9998;padding:6px 9px;border:1px solid rgba(8,127,91,.12);border-radius:999px;background:rgba(255,255,255,.84);backdrop-filter:blur(10px);font:800 8px/1 system-ui;color:#087f5b;box-shadow:0 6px 20px rgba(0,0,0,.06);opacity:.72;pointer-events:none';
-    el.querySelector('span').style.cssText='display:inline-block;width:6px;height:6px;border-radius:50%;background:#19b981;margin-right:5px';
-    document.body.appendChild(el);
-  });
 })();
 </script>
 
